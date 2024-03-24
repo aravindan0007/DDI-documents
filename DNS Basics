@@ -1,1 +1,121 @@
+### DNS RECORDS:
 
+## SPF record
+
+Sender Policy Framework (SPF) records in the DNS identify the mail servers allowed to send email for a domain. SPF protects domains and their brands from email abuse by spammers and hackers.
+
+
+The Simple Mail Transfer Protocol (SMTP) is used to send email. SMTP does not include validation that the sending mail server is allowed to send mail for a domain. So, anyone can use SMTP to send email that appears to be from any domain they wish. For example, a hacker might try to send phishing emails to Bank of America customers from accounts@bankofamerica.com to gain access to their bank accounts.
+SPF addresses this weakness in SMTP. It identifies the mail servers permitted to send email for the domain. Email from a server not permitted by the SPF record will be discarded, quarantined, or placed in a spam folder.
+SPF is specified in RFC 7208.
+
+
+How SPF works
+SPF records appear in the DNS as TXT records. The TXT record contains text that follows the SPF format. This record identifies the mail servers allowed to send email for the domain.
+The receiving mail server extracts the domain from the Return-Path field as it receives each email message. A DNS TXT lookup is performed on this domain to retrieve the domain's SPF record. The source server of the email must be among the mail servers identified by the SPF record.
+The most straightforward way to identify a mail server in SPF is by IP address. Below is an SPF record that allows the mail server with IP address 10.0.0.1 to send email for the example.org domain. No other servers are permitted to send email for the domain.
+
+
+example.org. 3600 TXT"v=spf1 ip4:10.0.0.1 -all"
+
+
+Return-Path versus From
+
+Email headers contain several "from" fields that each serve a different purpose. SPF uses the "Return-Path" field during validation.
+Return-Path is the email address where bounce messages are sent. Mail servers use the domain portion of Return-Path to find the domain's SPF record. However, email clients usually display the From field to the user. The From field may contain a different domain.
+This limitation of SPF is mitigated in two ways:
+
+
+• Domain-based Message Authentication, Reporting, and Conformance (DMARC) adds a domain alignment policy. This policy requires that the From and Return-Path domains match.
+• Modern email clients often flag messages where the From and Return-Path domains are different as unsafe.
+
+
+###SPF record format
+
+Every SPF record must begin with v=spf1. This specifies a version 1 SPF record. This is the only version so far.
+Next comes one or more directives. Each directive consists of an optional qualifier followed by a mechanism. The qualifier specifies if mail servers matching this mechanism pass or fail. Each mechanism identifies mail servers by IP address or through extra DNS lookups.
+The SPF record ends with the mechanism all. The all mechanism is used if no other mechanism is a match.
+The receiving mail server processes the SPF record from left to right. SPF processing ends when the first match is found. The first match determines if the email will be accepted, rejected, or treated as suspicious.
+SPF qualifiers
+
+Each directive has one of four possible qualifiers:
+
+• "+" Pass. The source server is allowed to send email for the domain. If there is no qualifier, + is assumed.
+• "-" Fail. The source server is not allowed to send email for the domain.
+• "~" Softfail. This is a weak failure. The source server is probably not allowed to send email for the domain.
+• "?" Neutral. The SPF record does not specify if the source server is allowed to send email for the domain.
+Fail causes the email to be rejected. Softfail allows the email to be accepted, but it may be treated as suspicious. It might be placed into a spam folder or in quarantine.
+Neutral is not very useful by itself. But it can be used with DMARC (Domain-based Message Authentication, Reporting, and Conformance) to trigger special mail handling.
+
+###SPF mechanisms
+
+
+A mechanism identifies one or more mail servers. Mechanisms include:
+
+• ip4: Specifies an IPv4 address or subnet.
+• ip6: Specifies an IPv6 address or subnet.
+• mx: Uses a type MX record lookup for the domain.
+• a: Uses a type A or AAAA lookup.
+• exists: Uses a type A lookup in a different way than the a mechanism.
+• include: Includes the SPF record for some other domain name.
+• all: This mechanism always appears at the end of the SPF record.
+If a mechanism is determined to be a match, the qualifier decides the email's fate. For example, if the qualifier is omitted or is +, the SPF result is Pass and the email is delivered. If the qualifier is -, the SPF result is Fail and the email is bounced.
+The ip4 and ip6 mechanisms
+These mechanisms contain either a single IP address or a subnet. A subnet is a range of IP addresses that share a common prefix. For IPv4, the mechanism may specify a single address such as ip4:10.0.0.1 or a subnet such as ip4:10.0.0.0/24. For IPv6, the mechanism may specify a single address such as ip6:2001:1000::1 or a subnet such as ip6:2001:1000::/64.
+These mechanisms match if the mail server's IP address matches the single address or is within the subnet.
+This example allows an IPv4 subnet and single IPv6 address to send mail for the domain:
+example.org. 3600 TXT"v=spf1 ip4:10.0.0.0/24 ip6:2001:1000::1 -all"
+The mx mechanism
+This mechanism triggers a type MX lookup for the domain. A type A or AAAA lookup is performed for each server in the MX record set to arrive at a set of IP addresses. This mechanism matches if the results contain the source mail server's IP address.
+This example omits the domain, so the MX record lookup would be for the domain from the Return-Path field:
+example.org. 3600 TXT"v=spf1 mx -all"
+The domain can be specified explicitly, or another domain can be specified. For example:
+example.org. 3600 TXT"v=spf1 mx:examplemailfactory.org -all"
+The a mechanism
+This mechanism specifies a domain name. The receiving mail server performs a type A or AAAA lookup for the specified name. This mechanism is a match if the IP address of the sending mail server is found in the result.
+The administrator could publish the mail server IP addresses for the domain at mailservers.example.org and use this SPF record:
+example.org. 3600 TXT"v=spf1 a:mailservers.example.org -all"
+The domain may be omitted: v=spf1 a -all. The type A or AAAA lookup would be for the current domain, which starts as the domain from the Return-Path field.
+The exists mechanism
+This advanced mechanism is not often used in practice. Here is a trivial example:
+example.org. 3600 TXT"v=spf1 exists:some_name.example.org -all"
+This SPF record would trigger a type A lookup for some_name.example.org. If any type A record is returned, the mechanism is a match. This example is not useful but the exists mechanism can be combined with SPF macros. We'll discuss macros later.
+The include mechanism
+The include mechanism triggers evaluation of the SPF record for some other domain. Multiple includes are permitted. This mechanism is used when email for the domain is sent by a third-party mail provider. An SPF record can also be split into multiple parts using the include mechanism.
+This SPF would be used if the domain's mail provider has an SPF record at examplemailfactory.org:
+example.org. 3600 TXT"v=spf1 include:examplemailfactory.org -all"
+The all mechanism
+The all mechanism appears at the end of all SPF records (unless the SPF uses the redirect modifier).
+The all mechanism specifies what should happen if none of the other mechanisms match. The all mechanism usually appears with the fail or softfail modifier. Softfail is more tolerant of errors in the SPF record, but for security it is best to use -all.
+SPF modifiers
+In addition to mechanisms, SPF also has something called modifiers. Modifiers look like mechanisms, but different rules apply. Modifiers are used infrequently. There are two modifiers: redirect and exp. Modifiers are always followed by an equals sign and then a value for the modifier.
+The redirect modifier
+The redirect modifier looks similar to the include mechanism, but there are significant differences. Modifiers are processed only after all mechanisms have been evaluated, and no match has been found.
+If an SPF record contains the all mechanism, then at least one of the mechanisms (the all mechanism itself) will always match. So the all mechanism must be omitted when the SPF record uses the redirect modifier.
+Here is an example that redirects to a third-party email provider. Note there is no all mechanism:
+example.org. 3600 TXT"v=spf1 redirect=examplemailfactory.org"
+Use of the redirect modifier is rare. The include mechanism is usually the right choice.
+The exp modifier
+Exp is short for explanation. The exp modifier is triggered when the SPF check causes mail failure. The exp modifier gives a DNS name that the receiving mail server will use to retrieve a TXT record. The contents of the TXT result contain an explanation for the failure. SPF macros can be used in the message to provide detailed information.
+An example of the exp modifier:
+example.org. 3600 TXT"v=spf1 ip4:10.0.0.0/24 exp=explain.spf.example.org -all"
+The domain would also contain a TXT containing the explanation message at explain.spf.example.org:
+explain.spf.example.org. 3600 TXT"Mail for example.org may only be sent by authorized servers"
+SPF macros
+In addition to the features of SPF we've discussed, RFC 7208 section 7 also specifies macros.
+Macros add flexibility and power to SPF. Macros appear in the SPF record as a percent sign followed by a macro letter inside curly braces. There are a number of supported macro letters. One macro is %{i}. This macro expands to the IP address of the sending mail server.
+The %{i} macro can be used with the exists mechanism. Type A records would be created with names corresponding to each mail server IP address. The addresses in these A records are not used. It is only important that these records exist.
+10.0.0.1.spf.example.org. 3600 A1.2.3.4
+10.0.0.2.spf.example.org. 3600 A1.2.3.4
+With these A records for each of the mail server IP addresses, the SPF record would be:
+example.org. 3600 TXT"v=spf1 exists:%{i}.spf.example.org -all"
+What record type for SPF?
+SPF records are stored in TXT records.
+Initially, the creators of SPF wanted to use a new DNS record type. The numeric value of this type was 99. Unfortunately, it proved too challenging to add a new record type to the global DNS. So SPF records are stored using the TXT record type.
+For more details on SPF record type, see RFC 7208 section 3.1.
+The importance of simplicity
+Email administrators try to make their SPF records as small and simple as possible. There are a few reasons for this:
+• Efficiency: A complex SPF record may require many DNS lookups and be slow to evaluate.
+• Complexity: A complex SPF record will be harder to get right. And harder to maintain as email servers change over time.
+• Processing limits: RFC 7208 section 4.6.4 places a limit of 10 DNS lookups on SPF evaluation. It also recommends a maximum processing time of 20 seconds. A complex SPF record may fail to evaluate within these limits. This will cause legitimate emails to be rejected or treated as spam.
+• DNS TXT size: DNS TXT record strings are limited to 255 characters. Larger SPF records are supported, but TXT at the root of the domain is shared with domain authorization and other uses. Overly large TXT record sets may introduce TCP DNS lookups, which should be avoided.
