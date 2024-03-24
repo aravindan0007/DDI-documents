@@ -59,16 +59,23 @@ A mechanism identifies one or more mail servers. Mechanisms include:
 • exists: Uses a type A lookup in a different way than the a mechanism.
 • include: Includes the SPF record for some other domain name.
 • all: This mechanism always appears at the end of the SPF record.
+
 If a mechanism is determined to be a match, the qualifier decides the email's fate. For example, if the qualifier is omitted or is +, the SPF result is Pass and the email is delivered. If the qualifier is -, the SPF result is Fail and the email is bounced.
 The ip4 and ip6 mechanisms
+
 These mechanisms contain either a single IP address or a subnet. A subnet is a range of IP addresses that share a common prefix. For IPv4, the mechanism may specify a single address such as ip4:10.0.0.1 or a subnet such as ip4:10.0.0.0/24. For IPv6, the mechanism may specify a single address such as ip6:2001:1000::1 or a subnet such as ip6:2001:1000::/64.
 These mechanisms match if the mail server's IP address matches the single address or is within the subnet.
 This example allows an IPv4 subnet and single IPv6 address to send mail for the domain:
+
 example.org. 3600 TXT"v=spf1 ip4:10.0.0.0/24 ip6:2001:1000::1 -all"
+
 The mx mechanism
+
 This mechanism triggers a type MX lookup for the domain. A type A or AAAA lookup is performed for each server in the MX record set to arrive at a set of IP addresses. This mechanism matches if the results contain the source mail server's IP address.
 This example omits the domain, so the MX record lookup would be for the domain from the Return-Path field:
+
 example.org. 3600 TXT"v=spf1 mx -all"
+
 The domain can be specified explicitly, or another domain can be specified. For example:
 example.org. 3600 TXT"v=spf1 mx:examplemailfactory.org -all"
 The a mechanism
@@ -119,3 +126,35 @@ Email administrators try to make their SPF records as small and simple as possib
 • Complexity: A complex SPF record will be harder to get right. And harder to maintain as email servers change over time.
 • Processing limits: RFC 7208 section 4.6.4 places a limit of 10 DNS lookups on SPF evaluation. It also recommends a maximum processing time of 20 seconds. A complex SPF record may fail to evaluate within these limits. This will cause legitimate emails to be rejected or treated as spam.
 • DNS TXT size: DNS TXT record strings are limited to 255 characters. Larger SPF records are supported, but TXT at the root of the domain is shared with domain authorization and other uses. Overly large TXT record sets may introduce TCP DNS lookups, which should be avoided.
+
+
+Amazon as an example
+
+Large organizations like Amazon have many email servers. This may require large or complex SPF records. Let's examine Amazon's SPF records as they existed at the time this article was written. The SPF record for amazon.com is:
+
+```
+dig txt amazon.com +short
+"v=spf1 include:spf1.amazon.com include:spf2.amazon.com include:amazonses.com -all"
+
+Amazon has broken its SPF into three parts and used the include mechanism for each part. This keeps each TXT record relatively small in size. It may also allow the parts to be re-used individually by other domains using the include mechanism. They have chosen the more secure -all over the less secure ~all.
+The three separate parts use the ip4 mechanism with subnets to identify the IP addresses of Amazon's mail servers:
+
+dig txt +short spf1.amazon.com
+"v=spf1 ip4:207.171.160.0/19 ip4:87.238.80.0/21 ip4:72.21.192.0/19 ip4:194.154.193.192/27 ip4:194.7.41.152/28 ip4:212.123.28.40/32 ip4:203.81.17.0/24 ip4:178.236.10.128/26 ip4:52.94.124.0/28 ip4:99.78.197.208/28 ip4:52.119.213.144/28 -all"
+
+dig txt +short spf2.amazon.com
+"v=spf1 ip4:176.32.105.0/24 ip4:176.32.127.0/24 ip4:106.50.16.0/28 ip4:205.251.233.32/32 ip4:205.251.233.36/32 ip4:72.21.217.142/32 ip4:52.95.48.152/29 ip4:52.95.49.88/29 -all"
+
+dig txt +short amazonses.com
+"v=spf1 ip4:199.255.192.0/22 ip4:199.127.232.0/22 ip4:54.240.0.0/18 ip4:69.169.224.0/20 ip4:23.249.208.0/20 ip4:23.251.224.0/19 ip4:76.223.176.0/20 ip4:54.240.64.0/19 ip4:54.240.96.0/19 ip4:52.82.172.0/22 -all"
+
+You may also need DMARC and DKIM
+
+SPF is only part of the story for securing email. There are three pillars of email security:
+
+• Sender Policy Framework (SPF): SPF ensures that only authorized mail servers can send mail for a domain.
+• Domain-keys Identified Mail (DKIM): DKIM uses public key cryptography to validate the sender's authenticity and to protect email messages from tampering.
+• Domain-based Message Authentication, Reporting, and Conformance (DMARC): DMARC adds policy and reporting. It prevents spammers from abusing the Return-Path field to evade SPF. DMARC also allows administrators to control how messages that fail SPF checks should be treated.
+While adding SPF to your domain is a good start, consider adding DKIM and DMARC to protect your domain and brand from abuse.
+Read my next article to learn the difference between MX, SPF, DKIM, DMARC and BIMI.
+
